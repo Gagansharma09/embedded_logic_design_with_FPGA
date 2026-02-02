@@ -1,1 +1,183 @@
+module gcd_top(
+    input clk,
+    input clr,
+    input go,
+    input [3:0] xin,
+    input [3:0] yin,
+    output [3:0] gcd_out
+);
 
+wire xld, yld, gld;
+wire xmsel, ymsel;
+wire eqflg, ltflg;
+
+gcd_datapath DP(
+    .clk(clk),
+    .clr(clr),
+    .xin(xin),
+    .yin(yin),
+    .xld(xld),
+    .yld(yld),
+    .gld(gld),
+    .xmsel(xmsel),
+    .ymsel(ymsel),
+    .eqflg(eqflg),
+    .ltflg(ltflg),
+    .gcd_out(gcd_out)
+);
+
+gcd_control CU(
+    .clk(clk),
+    .clr(clr),
+    .go(go),
+    .eqflg(eqflg),
+    .ltflg(ltflg),
+    .xld(xld),
+    .yld(yld),
+    .gld(gld),
+    .xmsel(xmsel),
+    .ymsel(ymsel)
+);
+
+endmodule
+
+module gcd_control(
+    input clk,
+    input clr,
+    input go,
+    input eqflg,
+    input ltflg,
+
+    output reg xld,
+    output reg yld,
+    output reg gld,
+    output reg xmsel,
+    output reg ymsel
+);
+
+reg [2:0] state, next;
+
+localparam IDLE  = 0,
+           LOAD  = 1,
+           COMP  = 2,
+           XSUB  = 3,
+           YSUB  = 4,
+           DONE  = 5;
+
+always @(posedge clk or posedge clr)
+    if (clr) state <= IDLE;
+    else     state <= next;
+
+always @(*) begin
+    next = state;
+    case(state)
+        IDLE: if(go) next = LOAD;
+
+        LOAD: next = COMP;
+
+        COMP: begin
+            if(eqflg) next = DONE;
+            else if(ltflg) next = YSUB;
+            else next = XSUB;
+        end
+
+        XSUB: next = COMP;
+        YSUB: next = COMP;
+
+        DONE: next = IDLE;
+    endcase
+end
+
+always @(*) begin
+    xld=0; yld=0; gld=0;
+    xmsel=0; ymsel=0;
+
+    case(state)
+        LOAD: begin
+            xld=1;
+            yld=1;
+        end
+
+        XSUB: begin
+            xld=1;
+            xmsel=1;
+        end
+
+        YSUB: begin
+            yld=1;
+            ymsel=1;
+        end
+
+        DONE: begin
+            gld=1;
+        end
+    endcase
+end
+
+endmodule
+
+module gcd_datapath(
+    input clk,
+    input clr,
+
+    input [3:0] xin,
+    input [3:0] yin,
+
+    input xld,
+    input yld,
+    input gld,
+
+    input xmsel,
+    input ymsel,
+
+    output eqflg,
+    output ltflg,
+    output [3:0] gcd_out
+);
+
+reg [3:0] xreg, yreg, greg;
+
+wire [3:0] x_minus_y;
+wire [3:0] y_minus_x;
+
+assign x_minus_y = xreg - yreg;
+assign y_minus_x = yreg - xreg;
+
+assign eqflg = (xreg == yreg);
+assign ltflg = (xreg < yreg);
+
+assign gcd_out = greg;
+
+/* X register */
+always @(posedge clk or posedge clr) begin
+    if (clr)
+        xreg <= 0;
+    else if (xld) begin
+        if (xmsel)
+            xreg <= x_minus_y;
+        else
+            xreg <= xin;
+    end
+end
+
+/* Y register */
+always @(posedge clk or posedge clr) begin
+    if (clr)
+        yreg <= 0;
+    else if (yld) begin
+        if (ymsel)
+            yreg <= y_minus_x;
+        else
+            yreg <= yin;
+    end
+end
+
+/* GCD register */
+always @(posedge clk or posedge clr) begin
+    if (clr)
+        greg <= 0;
+    else if (gld)
+        greg <= xreg;
+end
+
+endmodule
